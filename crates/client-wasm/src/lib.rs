@@ -280,6 +280,22 @@ impl Client {
         self.game.as_ref().map_or(Vec::new(), |g| g.scores.to_vec())
     }
 
+    /// Walls are closing in.
+    #[wasm_bindgen(getter, js_name = suddenDeath)]
+    pub fn sudden_death(&self) -> bool {
+        self.world().is_some_and(|w| w.sudden_death.is_some())
+            && matches!(self.game.as_ref().map(|g| g.phase), Some(Phase::Playing { .. }))
+    }
+
+    /// Tile where the next sudden-death wall lands, as `[x, y]`, or empty.
+    #[wasm_bindgen(js_name = nextWall)]
+    pub fn next_wall(&self) -> Vec<i32> {
+        if !self.sudden_death() {
+            return Vec::new();
+        }
+        self.world().and_then(|w| w.next_wall()).map_or(Vec::new(), |(x, y)| vec![x, y])
+    }
+
     /// Whether we have a character in the current round (false = spectating).
     #[wasm_bindgen(getter, js_name = inRound)]
     pub fn in_round(&self) -> bool {

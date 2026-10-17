@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{
     BASE_SPEED, BOMB_FUSE_TICKS, CORNER_ASSIST, FLAME_TICKS, MAX_BOMBS, MAX_RANGE,
-    MAX_SPEED_UPS, POWERUP_DROP_PERCENT, SPEED_STEP, START_BOMBS, START_RANGE, UNITS_PER_TILE,
+    MAX_SPEED_UPS, POWERUP_DROP_PERCENT, SPEED_STEP, START_BOMBS, START_RANGE,
+    SUDDEN_DEATH_WARNING_TICKS, UNITS_PER_TILE, WALL_DROP_TICKS,
 };
 use crate::map::{Map, Tile};
 use crate::rng::Rng;
@@ -115,6 +116,16 @@ pub struct World {
     pub items: Vec<Item>,
     /// Decides power-up drops. Part of the state, so replays and prediction match.
     pub rng: Rng,
+    /// Set once the round timer runs out: walls start closing in.
+    pub sudden_death: Option<SuddenDeath>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SuddenDeath {
+    /// Position in `Map::spiral()` of the next tile to check.
+    pub next: u16,
+    /// Ticks until the next wall drops.
+    pub cooldown: u16,
 }
 
 /// Index of the tile containing `v`.
@@ -137,7 +148,19 @@ impl World {
             flames: Vec::new(),
             items: Vec::new(),
             rng: Rng::new(seed),
+            sudden_death: None,
         }
+    }
+
+    /// Start closing the arena (no-op if already started).
+    pub fn start_sudden_death(&mut self) {
+        self.sudden_death.get_or_insert(SuddenDeath { next: 0, cooldown: SUDDEN_DEATH_WARNING_TICKS });
+    }
+
+    /// The tile the next sudden-death wall will land on, if any (for a warning marker).
+    pub fn next_wall(&self) -> Option<(i32, i32)> {
+        let sd = self.sudden_death.as_ref()?;
+        self.map.spiral().into_iter().skip(sd.next as usize).find(|&(x, y)| self.map.get(x, y) != Tile::Wall)
     }
 
     pub fn spawn_player(&mut self, id: u8) {
@@ -223,7 +246,37 @@ impl World {
         }
         self.flames.retain(|f| f.ticks > 0);
 
+        // 7. Sudden death: drop the next wall of the spiral.
+        self.close_in();
+
         self.tick += 1;
+    }
+
+    fn close_in(&mut self) {
+        let Some(sd) = &mut self.sudden_death else { return };
+        if sd.cooldown > 0 {
+            sd.cooldown -= 1;
+            return;
+        }
+        sd.cooldown = WALL_DROP_TICKS - 1;
+        let spiral = self.map.spiral();
+        // Skip tiles that are already walls (pillars): only real drops cost time.
+        while let Some(&(x, y)) = spiral.get(sd.next as usize) {
+            sd.next += 1;
+            if self.map.get(x, y) == Tile::Wall {
+                continue;
+            }
+            self.map.set(x, y, Tile::Wall);
+            self.bombs.retain(|b| (b.x, b.y) != (x, y));
+            self.items.retain(|it| (it.x, it.y) != (x, y));
+            self.flames.retain(|f| (f.x, f.y) != (x, y));
+            // Anyone even partly under it is crushed (which also keeps the rule that
+            // nobody ever overlaps a wall).
+            for p in self.players.iter_mut().filter(|p| p.alive && p.overlaps(x, y)) {
+                p.alive = false;
+            }
+            return;
+        }
     }
 
     fn try_place_bomb(&mut self, player_index: usize) {
@@ -640,6 +693,88 @@ mod tests {
         w.flames.push(Flame { x: 9, y: 1, ticks: FLAME_TICKS });
         run(&mut w, FLAME_TICKS as u32, IDLE);
         assert!(w.flames.is_empty());
+    }
+
+    // ---- sudden death ----
+
+    const WARN: u32 = SUDDEN_DEATH_WARNING_TICKS as u32;
+
+    #[test]
+    fn first_wall_waits_for_the_warning() {
+        let mut w = world_with_player_at(1, 1);
+        w.start_sudden_death();
+        run(&mut w, WARN, IDLE);
+        assert_eq!(w.map.get(1, 1), Tile::Floor, "still the warning period");
+        assert!(w.players[0].alive);
+        w.step(|_| IDLE);
+        assert_eq!(w.map.get(1, 1), Tile::Wall);
+    }
+
+    #[test]
+    fn walls_drop_along_the_spiral_one_per_interval() {
+        let mut w = world_with_player_at(7, 5);
+        w.start_sudden_death();
+        run(&mut w, WARN + 1, IDLE);
+        assert_eq!(w.map.get(1, 1), Tile::Wall);
+        assert_eq!(w.map.get(2, 1), Tile::Floor);
+        run(&mut w, WALL_DROP_TICKS as u32 - 1, IDLE);
+        assert_eq!(w.map.get(2, 1), Tile::Floor, "not before the interval");
+        w.step(|_| IDLE);
+        assert_eq!(w.map.get(2, 1), Tile::Wall);
+    }
+
+    #[test]
+    fn pillars_are_skipped_without_costing_time() {
+        let mut w = world_with_player_at(7, 5);
+        w.start_sudden_death();
+        // After k drops exactly k new walls exist, even though the spiral passes pillars
+        // (e.g. down the left column on the way back up).
+        let walls_before = w.map.tiles.iter().filter(|t| **t == Tile::Wall).count();
+        let drops = 40;
+        run(&mut w, WARN + (drops - 1) * WALL_DROP_TICKS as u32 + 1, IDLE);
+        let walls_after = w.map.tiles.iter().filter(|t| **t == Tile::Wall).count();
+        assert_eq!(walls_after - walls_before, drops as usize);
+    }
+
+    #[test]
+    fn falling_wall_crushes_and_clears_the_tile() {
+        let mut w = world_with_player_at(1, 1);
+        w.items.push(Item { x: 1, y: 1, kind: PowerUp::Fire });
+        w.bombs.push(Bomb { owner: 0, x: 1, y: 1, fuse: 200, range: 1, passable: 1 });
+        w.start_sudden_death();
+        run(&mut w, WARN + 1, IDLE);
+        assert!(!w.players[0].alive);
+        assert!(w.items.is_empty() && w.bombs.is_empty());
+    }
+
+    #[test]
+    fn partly_under_the_wall_also_crushes() {
+        // Centre on tile (2,1) but 30 units towards (1,1), which falls first.
+        let mut w = world_with_player_at(2, 1);
+        w.players[0].x -= 30;
+        w.start_sudden_death();
+        run(&mut w, WARN + 1, IDLE);
+        assert!(!w.players[0].alive);
+    }
+
+    #[test]
+    fn arena_closes_completely() {
+        let mut w = world_with_player_at(7, 5);
+        w.start_sudden_death();
+        run(&mut w, WARN + 120 * WALL_DROP_TICKS as u32, IDLE);
+        assert!(w.map.tiles.iter().all(|t| *t == Tile::Wall));
+        assert!(!w.players[0].alive);
+        assert_eq!(w.next_wall(), None);
+    }
+
+    #[test]
+    fn next_wall_points_at_the_upcoming_drop() {
+        let mut w = world_with_player_at(7, 5);
+        assert_eq!(w.next_wall(), None, "not before sudden death");
+        w.start_sudden_death();
+        assert_eq!(w.next_wall(), Some((1, 1)), "shown during the warning");
+        run(&mut w, WARN + 1, IDLE);
+        assert_eq!(w.next_wall(), Some((2, 1)));
     }
 
     // ---- power-ups ----

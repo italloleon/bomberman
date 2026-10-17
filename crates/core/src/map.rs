@@ -79,6 +79,26 @@ impl Map {
     fn spawn_points_for(w: i32, h: i32) -> [(i32, i32); MAX_PLAYERS] {
         [(1, 1), (w - 2, h - 2), (w - 2, 1), (1, h - 2)]
     }
+
+    /// Every tile inside the border, in a clockwise spiral starting at the top-left
+    /// corner and winding inwards — the order sudden death fills the arena in.
+    pub fn spiral(&self) -> Vec<(i32, i32)> {
+        let (mut left, mut top) = (1, 1);
+        let (mut right, mut bottom) = (self.width as i32 - 2, self.height as i32 - 2);
+        let mut out = Vec::new();
+        while left <= right && top <= bottom {
+            out.extend((left..=right).map(|x| (x, top)));
+            out.extend((top + 1..=bottom).map(|y| (right, y)));
+            if top < bottom {
+                out.extend((left..right).rev().map(|x| (x, bottom)));
+            }
+            if left < right {
+                out.extend((top + 1..bottom).rev().map(|y| (left, y)));
+            }
+            (left, top, right, bottom) = (left + 1, top + 1, right - 1, bottom - 1);
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -108,6 +128,22 @@ mod tests {
                 .count();
             assert!(open >= 2, "spawn {sx},{sy} has {open} open neighbours");
         }
+    }
+
+    #[test]
+    fn spiral_covers_the_inside_once_clockwise() {
+        let m = Map::classic(1);
+        let s = m.spiral();
+        let inside = (m.width as usize - 2) * (m.height as usize - 2);
+        assert_eq!(s.len(), inside);
+        let unique: std::collections::HashSet<_> = s.iter().collect();
+        assert_eq!(unique.len(), inside, "no tile twice");
+        assert!(s.iter().all(|&(x, y)| x >= 1 && y >= 1 && x <= 13 && y <= 11));
+        // Clockwise from the top-left: along the top row, then down the right side.
+        assert_eq!(&s[..3], &[(1, 1), (2, 1), (3, 1)]);
+        assert_eq!(s[13], (1 + 12, 2)); // first step down the right column
+        // 13x11 inside: the innermost ring is the single row y=6, x=6..=8.
+        assert_eq!(*s.last().unwrap(), (8, 6));
     }
 
     #[test]

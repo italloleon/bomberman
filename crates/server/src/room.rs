@@ -70,7 +70,12 @@ struct Room {
 
 pub fn spawn(code: String, seed: u64, rooms: Rooms) -> mpsc::Sender<RoomCmd> {
     let (tx, rx) = mpsc::channel(256);
-    let room = Room { code, game: Game::new(seed), seats: Vec::new(), next_conn: 0, next_order: 0 };
+    let mut game = Game::new(seed);
+    // Dev aid: `ROUND_SECONDS=10` gets to sudden death quickly.
+    if let Some(secs) = std::env::var("ROUND_SECONDS").ok().and_then(|s| s.parse::<u32>().ok()) {
+        game.round_ticks = secs * TICK_HZ;
+    }
+    let room = Room { code, game, seats: Vec::new(), next_conn: 0, next_order: 0 };
     tokio::spawn(room.run(rx, rooms));
     tx
 }

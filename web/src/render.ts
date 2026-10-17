@@ -105,6 +105,14 @@ export async function startRenderer(client: Client, clock: FrameClock): Promise<
       g.rect(x + TILE * 0.2, y + TILE * 0.2, TILE * 0.6, TILE * 0.6).fill({ color: 0xffe066, alpha });
     }
 
+    // Sudden death: pulse a red warning on the tile the next wall will land on.
+    const next = client.nextWall();
+    if (next.length) {
+      const pulse = 0.35 + 0.35 * Math.sin(performance.now() / 60);
+      g.rect(next[0] * TILE, next[1] * TILE, TILE, TILE).fill({ color: 0xff2d2d, alpha: pulse });
+      g.rect(next[0] * TILE + 1.5, next[1] * TILE + 1.5, TILE - 3, TILE - 3).stroke({ width: 3, color: 0xff2d2d });
+    }
+
     const items = client.items();
     for (let i = 0; i < items.length; i += 3) {
       drawPowerUp(g, items[i] * TILE, items[i + 1] * TILE, items[i + 2]);

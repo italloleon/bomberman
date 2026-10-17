@@ -6,7 +6,7 @@ use crate::game::Game;
 use crate::sim::Input;
 
 /// Bump when messages change incompatibly; the server rejects mismatched clients.
-pub const PROTOCOL_VERSION: u16 = 4;
+pub const PROTOCOL_VERSION: u16 = 5;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ClientMsg {

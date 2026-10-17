@@ -45,8 +45,14 @@ pub const MAX_SPEED_UPS: i32 = 4;
 
 /// Frozen "3, 2, 1" before each round.
 pub const COUNTDOWN_TICKS: u32 = 3 * TICK_HZ;
-/// Round length: 2:30. (Sudden death replaces the timeout draw in milestone 7.)
+/// Round length before sudden death: 2:30.
 pub const ROUND_TICKS: u32 = 150 * TICK_HZ;
+/// Sudden death drops one wall every this many ticks (0.2 s), spiralling inwards.
+/// The classic arena has 113 non-pillar tiles inside the border, so it closes in ~23 s.
+pub const WALL_DROP_TICKS: u16 = 6;
+/// Grace between "sudden death!" and the first wall, so nobody is crushed without warning
+/// (the first wall lands on a spawn corner).
+pub const SUDDEN_DEATH_WARNING_TICKS: u16 = 2 * TICK_HZ as u16;
 /// Result banner between rounds.
 pub const ROUND_OVER_TICKS: u32 = 3 * TICK_HZ;
 /// Winner banner before returning to the lobby.

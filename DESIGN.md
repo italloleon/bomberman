@@ -48,8 +48,11 @@ web/                Vite + TypeScript + PixiJS v8 — input, WebSocket transport
 - Power-ups (v1): +bomb, +fire, +speed. 20% drop from blocks (lowered from 30% after
   playtesting); flames destroy them.
   Kick comes later.
-- Round: last player standing (simultaneous deaths = draw). 2:30 then sudden-death walls
-  spiral in. Match: first to 3 round wins (host can change).
+- Round: last player standing (simultaneous deaths = draw). After 2:30, sudden death:
+  a 2 s warning, then walls drop one every 0.2 s in a clockwise spiral from the top-left
+  (pillars skipped, ~23 s to close). A falling wall crushes anyone even partly under it
+  and clears bombs/items/flames; the next tile to fall is marked in red. Rounds can't
+  time out. Match: first to 3 round wins (host can change).
 - All tuning numbers live in `crates/core/src/config.rs`.
 
 ## Client

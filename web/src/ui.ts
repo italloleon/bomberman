@@ -6,6 +6,7 @@ import type { Client } from './wasm/client.js';
 import { PLAYER_COLORS } from './render';
 
 const Phase = { Lobby: 0, Countdown: 1, Playing: 2, RoundOver: 3, MatchOver: 4 } as const;
+const SUDDEN_DEATH_BANNER_MS = 2000;
 
 const hud = document.getElementById('hud')!;
 const banner = document.getElementById('banner')!;
@@ -45,6 +46,8 @@ export function startUi(code: string, client: Client, send: (bytes: Uint8Array) 
   // Rebuild DOM only when the inputs to it change.
   let namesKey = '';
   let lobbyKey = '';
+  let wasSuddenDeath = false;
+  let suddenDeathAt = 0;
 
   const update = () => {
     const phase = client.phase;
@@ -64,11 +67,20 @@ export function startUi(code: string, client: Client, send: (bytes: Uint8Array) 
     const me = playerStats(client);
     stats.textContent = me && phase === Phase.Playing ? `💣${me.bombs}  🔥${me.range}  👟${me.speedUps}` : '';
 
-    if (phase === Phase.Playing) {
+    const suddenDeath = client.suddenDeath;
+    if (suddenDeath && !wasSuddenDeath) suddenDeathAt = performance.now();
+    wasSuddenDeath = suddenDeath;
+
+    if (phase === Phase.Playing && suddenDeath) {
+      timer.textContent = 'SUDDEN DEATH';
+      timer.classList.add('urgent');
+    } else if (phase === Phase.Playing) {
       const s = Math.ceil(client.phaseSecondsLeft);
       timer.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+      timer.classList.toggle('urgent', s <= 10);
     } else {
       timer.textContent = inMatch ? `Round ${client.round}` : '';
+      timer.classList.remove('urgent');
     }
 
     // --- banner ---
@@ -78,6 +90,8 @@ export function startUi(code: string, client: Client, send: (bytes: Uint8Array) 
     if (phase === Phase.Countdown) text = String(Math.ceil(client.phaseSecondsLeft));
     else if (phase === Phase.RoundOver) text = winnerName ? `${winnerName} wins the round!` : 'Draw!';
     else if (phase === Phase.MatchOver) text = `🏆 ${winnerName} wins the match!`;
+    // Matches the server's 2 s grace before the first wall falls.
+    else if (suddenDeath && performance.now() - suddenDeathAt < SUDDEN_DEATH_BANNER_MS) text = 'Sudden death!';
     else if (phase === Phase.Playing && !client.inRound) {
       text = 'Spectating — you join next round';
       small = true;

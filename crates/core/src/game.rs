@@ -18,7 +18,7 @@ pub enum Phase {
     Lobby,
     /// Players are placed but frozen until `until`.
     Countdown { until: u32 },
-    /// Round in progress; times out (draw) at `until`.
+    /// Round in progress; sudden death starts at `until`.
     Playing { until: u32 },
     /// Round result shown until `until`. `winner: None` is a draw.
     RoundOver { winner: Option<u8>, until: u32 },
@@ -38,6 +38,9 @@ pub struct Game {
     pub wins_needed: u8,
     /// 1-based round number within the match (0 in the lobby before any match).
     pub round: u8,
+    /// Ticks of normal play before sudden death. `ROUND_TICKS` unless overridden
+    /// (the server's `ROUND_SECONDS` env var, handy for testing sudden death).
+    pub round_ticks: u32,
     /// Seeds each round's map and power-up drops.
     rng: Rng,
 }
@@ -53,6 +56,7 @@ impl Game {
             scores: [0; MAX_PLAYERS],
             wins_needed: DEFAULT_WINS_NEEDED,
             round: 0,
+            round_ticks: ROUND_TICKS,
             rng,
         }
     }
@@ -91,12 +95,15 @@ impl Game {
             Phase::Lobby => {}
             Phase::Countdown { until } => {
                 if self.clock >= until {
-                    self.phase = Phase::Playing { until: self.clock + ROUND_TICKS };
+                    self.phase = Phase::Playing { until: self.clock + self.round_ticks };
                 }
             }
             Phase::Playing { until } => {
+                if self.clock >= until {
+                    self.world.start_sudden_death();
+                }
                 self.world.step(input_of);
-                if let Some(winner) = self.round_result(until) {
+                if let Some(winner) = self.round_result() {
                     self.end_round(winner);
                 }
             }
@@ -122,13 +129,13 @@ impl Game {
     }
 
     /// `None` while the round goes on; `Some(winner)` once it's decided
-    /// (`Some(None)` = draw: everyone died together, or time ran out).
-    fn round_result(&self, until: u32) -> Option<Option<u8>> {
+    /// (`Some(None)` = draw: everyone died together). Rounds can't time out — sudden
+    /// death eventually fills the whole arena.
+    fn round_result(&self) -> Option<Option<u8>> {
         let mut alive = self.world.players.iter().filter(|p| p.alive);
         match (alive.next(), alive.next()) {
             (None, _) => Some(None),
             (Some(p), None) => Some(Some(p.id)),
-            _ if self.clock >= until => Some(None),
             _ => None,
         }
     }
@@ -218,10 +225,23 @@ mod tests {
     }
 
     #[test]
-    fn timeout_is_a_draw() {
+    fn timeout_starts_sudden_death_not_a_draw() {
         let mut g = playing();
-        advance(&mut g, ROUND_TICKS + 1, &[0, 1]);
-        assert!(matches!(g.phase, Phase::RoundOver { winner: None, .. }));
+        advance(&mut g, ROUND_TICKS - 2, &[0, 1]);
+        assert!(g.world.sudden_death.is_none());
+        advance(&mut g, 2, &[0, 1]);
+        assert!(g.world.sudden_death.is_some());
+        assert!(matches!(g.phase, Phase::Playing { .. }), "still playing");
+    }
+
+    #[test]
+    fn sudden_death_ends_the_round() {
+        let mut g = playing();
+        // Idle players in their corners: the spiral reaches (1,1) first, so player 0
+        // (top-left) is crushed first and player 1 wins.
+        let warning = crate::config::SUDDEN_DEATH_WARNING_TICKS as u32;
+        advance(&mut g, ROUND_TICKS + warning + 2, &[0, 1]);
+        assert!(matches!(g.phase, Phase::RoundOver { winner: Some(1), .. }), "{:?}", g.phase);
     }
 
     #[test]

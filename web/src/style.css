@@ -111,6 +111,17 @@ canvas {
   font-weight: 600;
 }
 
+.hud .timer.urgent {
+  color: #ff4d4d;
+  animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  to {
+    opacity: 0.45;
+  }
+}
+
 .hud .stats {
   color: var(--fg);
 }

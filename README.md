@@ -21,7 +21,8 @@ Open http://localhost:5180, create a room, and open the room link in a second ta
 (or on your phone via the Network URL Vite prints).
 
 Dev extras: `?lag=150` fakes 150 ms of round-trip latency; `?touch=1` shows the mobile
-controls on desktop.
+controls on desktop; `ROUND_SECONDS=10 cargo run -p bomber-server` reaches sudden death
+after 10 s instead of 2:30.
 
 ## Deploy
 
