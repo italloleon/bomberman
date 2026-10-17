@@ -25,6 +25,15 @@ ssh "$DEPLOY_HOST" "cd $REMOTE_DIR \
   && test -f .env || { echo 'Missing $REMOTE_DIR/.env — create it with DOMAIN=your.subdomain'; exit 1; } \
   && cd $REMOTE_DIR && docker compose up -d && docker image prune -f"
 
-echo "==> Done. Health check:"
+echo "==> Health check"
 DOMAIN_ON_SERVER=$(ssh "$DEPLOY_HOST" "grep -E '^DOMAIN=' $REMOTE_DIR/.env | cut -d= -f2")
-curl -fsS "https://$DOMAIN_ON_SERVER/healthz" && echo
+# On a fresh server Caddy needs a few seconds to obtain the certificate; retry for ~1 min.
+for _ in $(seq 1 20); do
+  if curl -fsS "https://$DOMAIN_ON_SERVER/healthz" >/dev/null 2>&1; then
+    echo "OK: https://$DOMAIN_ON_SERVER is up"
+    exit 0
+  fi
+  sleep 3
+done
+echo "Health check failed. Logs: ssh $DEPLOY_HOST 'cd $REMOTE_DIR && docker compose logs caddy game'"
+exit 1
