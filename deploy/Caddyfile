@@ -1,0 +1,29 @@
+# DOMAIN comes from the environment (deploy/.env on the server), e.g. bomb.example.com.
+# With a real domain Caddy fetches and renews the HTTPS certificate automatically.
+# For a local test, DOMAIN=:80 serves plain HTTP.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Game server: room creation, WebSocket, health check.
+	handle /api/* {
+		reverse_proxy game:3000
+	}
+	handle /ws/* {
+		reverse_proxy game:3000
+	}
+	handle /healthz {
+		reverse_proxy game:3000
+	}
+
+	# Everything else is the client. Unknown paths (room links like /r/nyc/ABCD) get
+	# index.html so the client-side router can handle them.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Vite puts a content hash in asset filenames, so they can be cached forever.
+	@hashed path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+}

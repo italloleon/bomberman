@@ -1,0 +1,19 @@
+{
+  "name": "bomber-web",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "type": "module",
+  "scripts": {
+    "wasm": "wasm-pack build ../crates/client-wasm --target web --out-dir ../../web/src/wasm --out-name client --no-pack",
+    "dev": "pnpm wasm --dev && vite",
+    "build": "pnpm wasm --release && tsc && vite build",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "pixi.js": "^8.22.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

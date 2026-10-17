@@ -1,0 +1,14 @@
+# Local-only overlay that adds how to build the images:
+#   docker compose -f deploy/compose.yaml -f deploy/compose.build.yaml build
+# Droplets are x86-64, so pin the platform even if this machine is ARM.
+services:
+  game:
+    build:
+      context: ..
+      target: server
+      platforms: [linux/amd64]
+  caddy:
+    build:
+      context: ..
+      target: web
+      platforms: [linux/amd64]

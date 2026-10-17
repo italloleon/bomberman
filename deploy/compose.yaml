@@ -1,0 +1,31 @@
+# What runs on the Droplet. Images are built locally and shipped (see DEPLOY.md), so
+# this file has no build sections and needs no source code on the server.
+services:
+  game:
+    image: bomber-game:latest
+    restart: unless-stopped
+    environment:
+      REGION: ${REGION:-nyc}
+    # Only reachable from Caddy on the internal network, never directly.
+    expose:
+      - "3000"
+
+  caddy:
+    image: bomber-web:latest
+    restart: unless-stopped
+    depends_on:
+      - game
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in deploy/.env}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp" # HTTP/3
+    volumes:
+      # Certificates live here; keeping them avoids hitting Let's Encrypt rate limits.
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

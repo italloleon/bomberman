@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/server", "crates/client-wasm"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+bomber-core = { path = "crates/core" }
+serde = { version = "1", features = ["derive"] }
+postcard = { version = "1", features = ["alloc"] }
+
+[profile.release.package.client-wasm]
+opt-level = "s"
